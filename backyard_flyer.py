@@ -44,7 +44,7 @@ class BackyardFlyer(Drone):
             if np.linalg.norm(self.target_position[0:2] - self.local_position[0:2]) < 1.0:
                 print('waypoint reached')
                 if self.all_waypoints:
-                        self.waypoint_transition()
+                    self.waypoint_transition()
                 else:
                     print('no more waypoints')
                     if np.linalg.norm(self.local_velocity[0:2]) < 1.0:
