@@ -3,6 +3,7 @@ import time
 from enum import Enum
 
 import numpy as np
+import visdom
 
 from udacidrone import Drone
 from udacidrone.connection import MavlinkConnection, WebSocketConnection  # noqa: F401
@@ -26,6 +27,18 @@ class BackyardFlyer(Drone):
         self.all_waypoints = []
         self.in_mission = True
         self.check_state = {}
+        # enabling more than 2 plots at a time can cause performance issues
+        self.is_postion_plotted = True
+        self.is_velocity_plotted = False
+
+        # Plotting
+        self.v = visdom.Visdom()
+        assert self.v.check_connection()
+
+        if self.is_postion_plotted:
+            self.plot_ned_position()
+        elif self.is_velocity_plotted:
+            self.plot_ne_velocity()
 
         # initial state
         self.flight_state = States.MANUAL
@@ -34,6 +47,54 @@ class BackyardFlyer(Drone):
         self.register_callback(MsgID.LOCAL_POSITION, self.local_position_callback)
         self.register_callback(MsgID.LOCAL_VELOCITY, self.velocity_callback)
         self.register_callback(MsgID.STATE, self.state_callback)
+    
+    def plot_ned_position(self):
+        # Plot North/East Position
+        ne = np.array([self.local_position[0], self.local_position[1]]).reshape(1, -1)
+        self.ne_plot = self.v.scatter(ne, opts=dict(
+            title="Local position (north, east)", 
+            xlabel='North', 
+            ylabel='East'
+        ))
+        # Plot Down (Altitude) Position
+        d = np.array([self.local_position[2]])
+        self.t = 0
+        self.d_plot = self.v.line(d, X=np.array([self.t]), opts=dict(
+            title="Altitude (meters)", 
+            xlabel='Timestep', 
+            ylabel='Down'
+        ))
+
+        self.register_callback(MsgID.LOCAL_POSITION, self.update_ne_plot)
+        self.register_callback(MsgID.LOCAL_POSITION, self.update_d_plot)
+
+    def plot_ne_velocity(self):
+        # Plot North/East Velocity
+        velocity = np.array([np.linalg.norm(self.local_velocity[0:2])])
+        self.t = 0
+        self.velocity_plot = self.v.line(velocity, X=np.array([self.t]), opts=dict(
+            title="Velocity (m/s)", 
+            xlabel='Timestep', 
+            ylabel='Velocity'
+        ))
+        self.register_callback(MsgID.LOCAL_VELOCITY, self.update_ne_velocity_plot)
+
+    def update_ne_plot(self):
+        ne = np.array([self.local_position[0], self.local_position[1]]).reshape(1, -1)
+        self.v.scatter(ne, win=self.ne_plot, update='append')
+
+    def update_d_plot(self):
+        d = np.array([self.local_position[2]])
+        # update timestep
+        self.t += 1
+        self.v.line(d, X=np.array([self.t]), win=self.d_plot, update='append')
+
+    def update_ne_velocity_plot(self):
+        velocity = np.array([np.linalg.norm(self.local_velocity[0:2])])
+        # update timestep
+        self.t += 1
+        self.v.line(velocity, X=np.array([self.t]), win=self.velocity_plot, update='append')
+
     def local_position_callback(self):
         if self.flight_state == States.TAKEOFF:
             if abs(self.local_position[2]) > 0.95 * self.target_position[2]:
